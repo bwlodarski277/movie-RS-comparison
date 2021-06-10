@@ -1,5 +1,14 @@
+# %% Imports
+
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import MinMaxScaler
+import pandas as pd
 import copy
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# %% Classes
 
 
 class Cluster:
@@ -124,3 +133,38 @@ class ModifiedKMeans:
             # If the iteration limit is reached
             print('Iteration limit reached')
         return self.clusters
+
+
+# %% Reading the movies file
+
+if __name__ == '__main__':
+    print('Reading movies CSV')
+    moviesDf = pd.read_csv('./data/movies.csv')
+    moviesDf
+
+# %% Encoding genres
+
+    # This splits the genres from a single string a list of genres.
+    encodings = moviesDf['genres'].str.split('|').explode()
+    crossedDf = pd.crosstab(encodings.index, encodings)
+    encodedDf = moviesDf.drop(columns=['title', 'genres']).join(crossedDf)
+    encodedDf
+
+# %%
+
+    # encodedDf = pd.get_dummies(genresDf, prefix='genre').groupby(level=0).sum()
+    # encodedDf
+
+# %%
+
+    pca = PCA(n_components=2)  # type: ignore
+
+    pcaDf = pca.fit_transform(encodedDf)
+    pcaDf
+
+    scaler = MinMaxScaler()
+
+    scaledDf = scaler.fit_transform(pcaDf)
+    scaledDf
+
+    plt.scatter(scaledDf[:, 0], scaledDf[:, 1])
