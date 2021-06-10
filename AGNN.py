@@ -1,9 +1,9 @@
 # To add a new cell, type '# %%'
 # To add a new markdown cell, type '# %% [markdown]'
 # %%
-from KMeansClustering import ModifiedKMeans
+from KMeansClustering import Cluster as cluster, ModifiedKMeans
 import random
-from typing import List, Union
+from typing import Any, List, Union
 from IPython import get_ipython
 
 # %%
@@ -51,7 +51,7 @@ def sim(om_s: Series, om_t: Series) -> Union[float, None]:
     """Generates a similarity value between two online movies."""
 
     # Merging the two movies so we can find common users who rated both
-    temp_om: pd.Series = pd.concat([om_s, om_t], axis=1)
+    temp_om: Any = pd.concat([om_s, om_t], axis=1)
 
     # Dropping rows with NaNs as this yields movies with common ratings
     common_om = temp_om.dropna()
@@ -237,7 +237,7 @@ k_means = ModifiedKMeans(6)
 # Making sure results are reproducible
 np.random.seed(seed=1)
 
-clusters = k_means.cluster_data(iters=100, data_points=data_points)
+clusters: list[Any] = k_means.cluster_data(iters=100, data_points=data_points)
 clusters
 
 # %%
@@ -294,7 +294,7 @@ def euclidean_dist(t, c):
 clusters = [[] for _ in range(n_clusters)]
 
 # List of distances between data points and each cluster.
-distances = [[] for _ in range(n_clusters)]
+distances: list[list] = [[] for _ in range(n_clusters)]
 
 
 def cluster_data():
@@ -437,3 +437,5 @@ n_output_layer = random_weights(n_output_layer)
 def error_rate(predicted, actual):
     """Calculates the error rate of the ou"""
     return predicted * (1 - predicted) * (actual - predicted)
+
+# %%
