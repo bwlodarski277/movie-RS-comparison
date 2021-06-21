@@ -126,14 +126,13 @@ ratings_matrix.head()
 similarities_list = []
 
 # Processing similarities in parallel
-if __name__ == "__main__":
-    cpu_count = mp.cpu_count()
+cpu_count = mp.cpu_count()
 
-    batch_matrices = np.array_split(ratings_matrix, cpu_count, axis=1)
+batch_matrices = np.array_split(ratings_matrix, cpu_count, axis=1)
 
-    pool = mp.Pool(cpu_count)
-    similarities_list = pool.map(avg_sim, batch_matrices)
-    similarities_list
+pool = mp.Pool(cpu_count)
+similarities_list = pool.map(avg_sim, batch_matrices)
+similarities_list
 
 print('Completed processing similarities.')
 
@@ -202,8 +201,7 @@ filtered_table = filtered_matrix.melt(
     id_vars=['userId'], var_name="movieId", value_name="rating").dropna()
 
 filtered_table['userId'] = filtered_table['userId'].astype(int)  # type: ignore
-filtered_table['movieId'] = filtered_table['movieId'].astype(
-    int)  # type: ignore
+filtered_table['movieId'] = filtered_table['movieId'].astype(int)  # type: ignore
 
 order_col = [i for i in range(filtered_table.shape[0])]
 
