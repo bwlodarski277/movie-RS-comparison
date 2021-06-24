@@ -2,22 +2,10 @@
 # To add a new markdown cell, type '# %% [markdown]'
 # %%
 import time
-from pprint import pprint
-from typing import Union
-import numba
 from IPython import get_ipython
-
-# %%
 import matplotlib.pyplot as plt
-from IPython import get_ipython
-from numpy.core.numeric import outer
-
-
-# %%
-import seaborn as sns
+import pandas as pd
 import numpy as np
-import multiprocessing as mp
-from IPython import get_ipython
 
 # %% [markdown]
 #   # AGNN RS model implementation
@@ -31,7 +19,6 @@ from IPython import get_ipython
 
 # Reading the ratings matrix
 
-import pandas as pd
 
 ratings_matrix = pd.read_csv('data/ratings_matrix.csv')
 # Limiting number of cols. as it would take a week to run.
@@ -185,8 +172,10 @@ print('\nCompleted processing similarities.')
 column_similarity = np.array(list(zip(ratings_matrix.columns, similarities_list[:, 1])))
 column_similarity
 
+np.savetxt('data/similarities_index.csv', similarities_list, fmt='%d,%f', delimiter=',')
+
 np.savetxt('data/similarities.csv', column_similarity,
-           fmt='%s,%s', delimiter=',', header='movieId,similarity', comments='')
+           fmt='%s,%s', delimiter=',')
 
 # %%
 
@@ -301,7 +290,8 @@ plt.matshow(filtered_matrix.drop(labels='userId', inplace=False, axis=1))
 
 plt.xlabel('Movie IDs')
 plt.ylabel('User IDs')
-plt.colorbar()
+bar = plt.colorbar()
+bar.set_label('Movie rating (0.5-5 stars)')
 
 # %%
 
