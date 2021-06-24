@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+import matplotlib.pyplot as plt
 
 print('TensorFlow version', tf.__version__)
 
@@ -200,5 +201,156 @@ geneticAlgorithm = pygad.GA(num_generations=100,
 
 geneticAlgorithm.run()
 geneticAlgorithm.plot_result()
+
 # %%
 
+# Running the neural network on clustered data
+
+clustered_movies = pd.read_csv('data/clustered_movies.csv')
+clustered_movies.drop(clustered_movies.columns[0], axis=1, inplace=True)
+clustered_movies
+
+# %%
+
+filtered_ratings = pd.read_csv('data/filtered_ratings.csv')
+filtered_ratings
+
+# %%
+
+# Getting the IDs of movies in each cluster
+
+
+def movie_ids_in_cluster(cluster: pd.Series):
+    return cluster.index[cluster.values]
+
+
+def get_ratings_in_cluster(cluster: pd.Series):
+    """Returns a DataFrame of ratings of movies within the cluster"""
+    movies_in_cluster = cluster.index[cluster.values].to_numpy(dtype=int)  # type:ignore
+    print(movies_in_cluster)
+    return filtered_ratings[filtered_ratings['movieId'].isin(movies_in_cluster)]
+
+
+# for cluster in clustered_movies.itertuples():
+clusters = clustered_movies.apply(get_ratings_in_cluster, axis=1).tolist()
+clusters[5]
+
+# %%
+
+# Reading the filtered ratings to allocate reviews to each cluster
+
+# for cluster in clusters:
+cluster = clusters[0]
+print('Cluster empty:', cluster.empty)
+
+# %%
+
+# Splitting the data into features and target
+X = cluster[['userId', 'movieId']]
+y = cluster['rating']
+
+X
+
+# %%
+
+# Encoding the IDs
+userId_encoder = Encoder(X['userId'].unique())
+movieId_encoder = Encoder(X['movieId'].unique())
+# Assigning new encoded IDs
+X.userId = X.userId.map(userId_encoder.original2encoded)
+X.movieId = X.movieId.map(movieId_encoder.original2encoded)
+
+# %%
+
+# Splitting dataset into training and testing sets (25% used for testing)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, shuffle=True, random_state=42)  # type:ignore
+
+# %%
+
+# Creating the model with all the points in the cluster
+model = createModel(data=cluster, userOutputDim=50, movieOutputDim=50)
+# Training the model with the split data
+history = model.fit(x=[X_train['userId'], X_train['movieId']], y=y_train,
+                    epochs=30, verbose=2, validation_data=([X_test['userId'], X_test['movieId']], y_test))
+
+# %%
+
+# Plotting the results
+
+plt.plot(history.history['MAE'])
+plt.plot(history.history['val_MAE'])
+plt.ylabel('Mean Absolute Error (MAE)')
+plt.xlabel('Epoch')
+plt.legend(['Training data', 'Testing data'])
+plt.title('Mean Absolute Error per training epoch')
+
+# %%
+
+# Repeating the above for each cluster
+
+epochs = 5
+
+for cluster in clusters:
+    if cluster.empty:
+        print('Skipping cluster as it is empty')
+        continue
+    # Splitting the data into features and target
+    X = cluster[['userId', 'movieId']]
+    y = cluster['rating']
+    # Encoding the IDs
+    userId_encoder = Encoder(X['userId'].unique())
+    movieId_encoder = Encoder(X['movieId'].unique())
+    # Assigning new encoded IDs
+    X.userId = X.userId.map(userId_encoder.original2encoded)
+    X.movieId = X.movieId.map(movieId_encoder.original2encoded)
+    # Splitting dataset into training and testing sets (25% used for testing)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.25, shuffle=True, random_state=42)  # type:ignore
+    # Creating the model with all the points in the cluster
+    model = createModel(data=cluster, userOutputDim=50, movieOutputDim=50)
+    # Training the model with the split data
+    history = model.fit(x=[X_train['userId'], X_train['movieId']], y=y_train,
+                        epochs=epochs, verbose=2, validation_data=([X_test['userId'], X_test['movieId']], y_test))
+    # Plotting the results
+    plt.plot(history.history['MAE'])
+    plt.plot(history.history['val_MAE'])
+    plt.ylabel('Mean Absolute Error (MAE)')
+    plt.xlabel('Epoch')
+    plt.legend(['Training data', 'Testing data'])
+    plt.title('Mean Absolute Error per training epoch')
+    plt.xticks(np.arange(0, epochs, step=1))
+    plt.show()
+
+# %%
+
+# Running the above on the whole dataset
+
+# Splitting the data into features and target
+X = filtered_ratings[['userId', 'movieId']]
+y = filtered_ratings['rating']
+# Encoding the IDs
+userId_encoder = Encoder(X['userId'].unique())
+movieId_encoder = Encoder(X['movieId'].unique())
+# Assigning new encoded IDs
+X.userId = X.userId.map(userId_encoder.original2encoded)
+X.movieId = X.movieId.map(movieId_encoder.original2encoded)
+# Splitting dataset into training and testing sets (25% used for testing)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, shuffle=True, random_state=42)  # type:ignore
+# Creating the model with all the points in the cluster
+model = createModel(data=filtered_ratings, userOutputDim=50, movieOutputDim=50)
+# Training the model with the split data
+history = model.fit(x=[X_train['userId'], X_train['movieId']], y=y_train,
+                    epochs=epochs, verbose=2, validation_data=([X_test['userId'], X_test['movieId']], y_test))
+# Plotting the results
+plt.plot(history.history['MAE'])
+plt.plot(history.history['val_MAE'])
+plt.ylabel('Mean Absolute Error (MAE)')
+plt.xlabel('Epoch')
+plt.legend(['Training data', 'Testing data'])
+plt.title('Mean Absolute Error per training epoch')
+plt.xticks(np.arange(0, epochs, step=1))
+plt.show()
+
+# %%
