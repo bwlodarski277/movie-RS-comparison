@@ -282,9 +282,6 @@ filtered_matrix
 
 # Plotting the results
 
-
-get_ipython().run_line_magic('matplotlib', 'inline')
-
 # Excluding the user ID from the plot
 plt.matshow(filtered_matrix.drop(labels='userId', inplace=False, axis=1))
 
