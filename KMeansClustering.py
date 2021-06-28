@@ -210,7 +210,10 @@ pca = PCA(n_components=2)
 pca_movie_genres = pca.fit_transform(scaled)
 pca_movie_genres
 
-# plt.scatter(x=pca_movie_genres[:, 0], y=pca_movie_genres[:, 1])
+plt.scatter(x=pca_movie_genres[:, 0], y=pca_movie_genres[:, 1])
+plt.title('Movies table with PCA applied')
+plt.xlabel('Principal Component 1')
+plt.ylabel('Principal Component 2')
 
 # kmeans = KMeans(n_clusters=6)
 # pca_clusters = kmeans.fit_predict(pca_movie_genres)
