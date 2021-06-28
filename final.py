@@ -1,7 +1,8 @@
 # %% Imports
+from tensorflow.keras.utils import plot_model
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.layers import Input, Embedding, Dense, Concatenate, Flatten
-from tensorflow.keras import activations, backend, Model
+from tensorflow.keras import activations, backend, Model, losses, metrics, optimizers
 import pickle
 import numpy as np
 import pandas as pd
@@ -10,7 +11,8 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 
-# %% Loading pre-filtered dataset
+# %%
+# Loading pre-filtered dataset
 
 # This can be loaded in from a pre-filtered dataset as
 # it does not need to be calculated every time.
@@ -23,7 +25,8 @@ filtered_ratings
 genres_table = pd.read_csv('data/movies.csv')
 genres_table
 
-# %% Dropping movie title and encoding the genres into columns
+# %%
+# Dropping movie title and encoding the genres into columns
 
 encodings = genres_table['genres'].str.split('|').explode()
 updated_genres = genres_table.drop(columns=['title', 'genres'])
@@ -31,7 +34,8 @@ crosstab = pd.crosstab(encodings.index, encodings)
 
 crosstab
 
-# %% Performing Principal Component Analysis on the ratings
+# %%
+# Performing Principal Component Analysis on the ratings
 
 # Scaling The dataset first
 scaler = MinMaxScaler()
@@ -47,7 +51,8 @@ plt.title('Principal component analyis of the movie genres')
 plt.xlabel('Principal component 1')
 plt.ylabel('Principal component 2')
 
-# %% Performing standard K-means clustering
+# %%
+# Performing standard K-means clustering
 
 # Creating an empty array to store the cluster data for later
 clusters_standard = []
@@ -70,7 +75,8 @@ with open('pickle/clusters_standard.pkl', 'wb') as file:
 # Clearing memory
 # del clusters_standard
 
-# %% Performing modified K-means clustering
+# %%
+# Performing modified K-means clustering
 
 # Modified K-Means implementation using NumPy
 
@@ -171,7 +177,6 @@ class ModifiedKMeansV2:
             if np.array_equal(old_points, self.points):
                 print(f'\nFinished in {iteration+1} iterations')
                 break
-            # print(f'Finished iteration {iteration+1}')
         else:
             # If the iteration limit is reached
             print('\nIteration limit reached')
@@ -198,40 +203,31 @@ for n_clusters in range(2, 6):
 with open('pickle/clusters_custom.pkl', 'wb') as file:
     pickle.dump(clusters_custom, file)
 
-# Clearing memory
-# del clusters_custom
-
-# %% Creating Keras model
+# %%
+# Creating Keras model
 
 
-def createModel(data: pd.DataFrame, userOutputDim: int, movieOutputDim: int, hiddenLayers: list[int] = []):
-    userInput = Input(shape=(1,))
-    movieInput = Input(shape=(1,))
-
-    numUsers = data['userId'].nunique() + 1
-    numMovies = data['movieId'].nunique() + 1
-
+def create_model(data: pd.DataFrame):
+    user = Input(shape=(1,))  # Single user
+    movie = Input(shape=(1,))  # Single movie
+    num_users = data['userId'].nunique()
+    num_movies = data['movieId'].nunique()
     # Using average between number of movies and output layer as default hidden layer
-    hiddenLayers = [round((numMovies + 1) / 2)] if not hiddenLayers else hiddenLayers
-
-    userEmbedding = Embedding(input_dim=numUsers, output_dim=userOutputDim)(userInput)
-    movieEmbedding = Embedding(input_dim=numMovies, output_dim=movieOutputDim)(movieInput)
-
+    hidden_layer = round((num_movies + 1) / 2)
+    # Creating embedding for the users
+    users = Embedding(input_dim=num_users, output_dim=50)(user)
+    # Creating embedding for movies
+    movies = Embedding(input_dim=num_movies, output_dim=50)(movie)
     # The network must converge down to one 'branch' so we concatenate the two embeddings
-    concatenated = Concatenate()([userEmbedding, movieEmbedding])
-
-    # Flattening the 2D data to 1D
-    flattened = Flatten()(concatenated)
-
-    # Creating a set of regular layers, with n nodes in each
-    denseLayers = flattened
-    for layer in hiddenLayers:
-        denseLayers = Dense(units=layer, activation=activations.relu)(denseLayers)
-
+    users_and_movies = Concatenate()([users, movies])
+    # Creating a regular layer, with n nodes
+    dense_layer = Dense(units=hidden_layer, activation=activations.relu)(users_and_movies)
     # The final layer is the output which has a single output neuron
-    output = Dense(units=1)(denseLayers)
-    model = Model(inputs=[userInput, movieInput], outputs=output)
-    model.compile(optimizer='Adam', loss='MSE', metrics=['MAE'])
+    output = Dense(units=1)(dense_layer)
+    model = Model(inputs=[user, movie], outputs=output)
+    model.compile(optimizer=optimizers.Adam(),
+                  loss='MAE',
+                  metrics=['MAE'])
     return model
 
 # %% Creating label encoder
@@ -270,7 +266,9 @@ def get_standard_ratings(clusters: np.ndarray):
 
 n_epochs = 10
 
-standard_kmeans_cluster_scores = []
+standard_kmeans_cluster_scores_mae = []
+standard_kmeans_cluster_scores_rmse = []
+
 
 # Iterating over all standard clusters
 # Where K is the number of clusters
@@ -282,10 +280,12 @@ for k in range(2, 6):
     # Creating array that holds ratings of movies that belong in each cluster
     cluster_reviews = get_standard_ratings(current_cluster)
     print(f'Creating models for standard K-means with {k} clusters')
-    cluster_scores = []
+    cluster_scores_mae = []
+    cluster_scores_rmse = []
     for cluster_idx in range(k):
         print(f'Training cluster {cluster_idx+1}')
-        model = createModel(data=cluster_reviews[cluster_idx], userOutputDim=50, movieOutputDim=50)
+        model = create_model(data=cluster_reviews[cluster_idx])
+        plot_model(model, to_file=f'images/models/standard-{k}.png', show_shapes=True)
         # Splitting dataset into training and testing sets (25% used for testing)
         X = cluster_reviews[cluster_idx][['userId', 'movieId']]
         y = cluster_reviews[cluster_idx]['rating']
@@ -302,21 +302,22 @@ for k in range(2, 6):
         history = model.fit(x=[X_train['userId'], X_train['movieId']], y=y_train,  # type:ignore
                             epochs=n_epochs, verbose=1,
                             validation_data=([X_test['userId'], X_test['movieId']], y_test))  # type:ignore
-        # mae = model.evaluate(x=[X['userId'], X['movieId']], y=y)[1]
-        mae = model.evaluate(x=[X_test['userId'], X_test['movieId']], y=y_test)[1]  # type:ignore
-        cluster_scores.append(mae)
+        scores = model.evaluate(x=[X_test['userId'], X_test['movieId']], y=y_test)  # type:ignore
+        cluster_scores_mae.append(scores[1])
         plt.plot(history.history['MAE'])  # type:ignore
         plt.plot(history.history['val_MAE'])  # type:ignore
         plt.ylabel('Mean Absolute Error (MAE)')
         plt.xlabel('Epoch')
         plt.legend(['Training data', 'Testing data'])
         plt.title(f'Standard K-Means, {k} clusters, # {cluster_idx}')
-        plt.savefig(f'images/kmeans/models/{k}-{cluster_idx}.png')
+        plt.savefig(f'images/kmeans/models/{k}-mae-{cluster_idx}.png')
         plt.show()
-    k_clusters_mae = np.mean(cluster_scores)
-    standard_kmeans_cluster_scores.append(k_clusters_mae)
+    k_clusters_mae = np.mean(cluster_scores_mae)
+    # k_clusters_rmse = np.mean(cluster_scores_rmse)
+    standard_kmeans_cluster_scores_mae.append(k_clusters_mae)
+    # standard_kmeans_cluster_scores_rmse.append(k_clusters_rmse)
 
-for k, cluster in zip(range(2, 6), standard_kmeans_cluster_scores):
+for k, cluster in zip(range(2, 6), standard_kmeans_cluster_scores_mae):
     print(f'{k} clusters MAE: {cluster}')
 
 # %% Running Keras model on custom K-Means
@@ -328,14 +329,16 @@ def get_custom_ratings(cluster: pd.Series):
     return filtered_ratings[filtered_ratings['movieId'].isin(movies_in_cluster)]
 
 
-custom_kmeans_cluster_scores = []
+custom_kmeans_cluster_scores_mae = []
+custom_kmeans_cluster_scores_rmse = []
 
 for k in range(2, 6):
     k_idx = k - 2
     current_cluster = pd.DataFrame(
         clusters_custom[k_idx], columns=genres_table['movieId'])  # type:ignore
     clusters = current_cluster.apply(get_custom_ratings, axis=1).tolist()
-    custom_cluster_scores = []
+    custom_cluster_scores_mae = []
+    custom_cluster_scores_rmse = []
     print(f'Creating models for modified K-means with {k} clusters')
     for cluster_idx in range(k):
         print(f'Training cluster {cluster_idx+1}')
@@ -348,25 +351,26 @@ for k in range(2, 6):
         X['movieId'] = X['movieId'].map(movieId_encoder.original2encoded)
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.25, shuffle=True, random_state=42)  # type:ignore
-        model = createModel(data=cluster, userOutputDim=50, movieOutputDim=50)
+        model = create_model(data=cluster)
+        plot_model(model, to_file=f'images/models/modified-{k}.png', show_shapes=True)
         history = model.fit(x=[X_train['userId'], X_train['movieId']], y=y_train,  # type:ignore
                             epochs=n_epochs, verbose=1,
                             validation_data=([X_test['userId'], X_test['movieId']], y_test))  # type:ignore
-        # mae = model.evaluate(x=[X['userId'], X['movieId']], y=y)[1]
-        mae = model.evaluate(x=[X_test['userId'], X_test['movieId']], y=y_test)[1]  # type:ignore
-        custom_cluster_scores.append(mae)
+        scores = model.evaluate(x=[X_test['userId'], X_test['movieId']], y=y_test)  # type:ignore
+        custom_cluster_scores_mae.append(scores[1])
+        # custom_cluster_scores_rmse.append(scores[2])
         plt.plot(history.history['MAE'])  # type:ignore
         plt.plot(history.history['val_MAE'])  # type:ignore
         plt.ylabel('Mean Absolute Error (MAE)')
         plt.xlabel('Epoch')
         plt.legend(['Training data', 'Testing data'])
         plt.title(f'Modified K-Means, {k} clusters, # {cluster_idx}')
-        plt.savefig(f'images/modified_kmeans/models/{k}-{cluster_idx}.png')
+        plt.savefig(f'images/modified_kmeans/models/{k}-mae-{cluster_idx}.png')
         plt.show()
-    k_clusters_mae = np.mean(custom_cluster_scores)
-    custom_kmeans_cluster_scores.append(k_clusters_mae)
+    k_clusters_mae = np.mean(custom_cluster_scores_mae)
+    custom_kmeans_cluster_scores_mae.append(k_clusters_mae)
 
-for k, cluster in zip(range(2, 6), custom_kmeans_cluster_scores):
+for k, cluster in zip(range(2, 6), custom_kmeans_cluster_scores_mae):
     print(f'{k} clusters MAE: {cluster}')
 
 # %% Metrics
@@ -377,8 +381,8 @@ x = np.arange(len(labels))
 width = 0.3
 
 fig, ax = plt.subplots()
-fig1 = ax.plot(standard_kmeans_cluster_scores, label='Standard')
-fig2 = ax.plot(custom_kmeans_cluster_scores, label='Modified')
+fig1 = ax.plot(standard_kmeans_cluster_scores_mae, label='Standard')
+fig2 = ax.plot(custom_kmeans_cluster_scores_mae, label='Modified')
 
 ax.set_title('Mean Absolute Error per clustering method')
 ax.set_ylabel('Mean Absolute Error (MAE)')
@@ -397,42 +401,34 @@ plt.show()
 
 # Adding movie metadata to the neural network
 
-def createCustomModel(data: pd.DataFrame, metadata_size: int, userOutputDim: int, movieOutputDim: int, hidden_layers: list[int] = []):
-    user_input = Input(shape=(1,))
-    movie_input = Input(shape=(1,))
-
-    metadata = Input(shape=(metadata_size,))
-
-    num_users = data['userId'].nunique() + 1
-    num_movies = data['movieId'].nunique() + 1
-
+def create_custom_model(data: pd.DataFrame):
+    user = Input(shape=(1,))  # Single user
+    movie = Input(shape=(1,))  # Single movie
+    metadata = Input(shape=(20,))  # Encoded movie genres
+    num_users = data['userId'].nunique()
+    num_movies = data['movieId'].nunique()
     # Using average between number of movies and output layer as default hidden layer
-    hidden_layers = [round((num_movies + 1) / 2)] if not hidden_layers else hidden_layers
-
-    user_embedding = Embedding(input_dim=num_users, output_dim=userOutputDim)(user_input)
-    movie_embedding = Embedding(input_dim=num_movies, output_dim=movieOutputDim)(movie_input)
-
+    hidden_layer = round((num_movies + 1) / 2)
+    # Creating embedding for the users
+    users = Embedding(input_dim=num_users, output_dim=50)(user)
+    # Creating embedding for movies
+    movies = Embedding(input_dim=num_movies, output_dim=50)(movie)
     # The network must converge down to one 'branch' so we concatenate the two embeddings
-    concatenated = Concatenate()([user_embedding, movie_embedding])
-
-    # Flattening the 2D data to 1D
-    flattened = Flatten()(concatenated)
-
+    users_and_movies = Concatenate()([users, movies])
+    # We need to flatten the concatenated data so that we can concatenate
+    # again, as the number of dimensions needs to match in the items
+    # being concatenated.
+    users_and_movies = Flatten()(users_and_movies)
     # Including the movie metadata
-    metadata_concatenate = Concatenate()([flattened, metadata])
-
-    # Flattening 2D data again after concatenation
-    metadata_flattened = Flatten()(metadata_concatenate)
-
-    # Creating a set of regular layers, with n nodes in each
-    denseLayers = metadata_flattened
-    for layer in hidden_layers:
-        denseLayers = Dense(units=layer, activation=activations.relu)(denseLayers)
-
+    metadata_users_movies = Concatenate()([users_and_movies, metadata])
+    # Creating a regular layer
+    dense_layer = Dense(units=hidden_layer, activation=activations.relu)(metadata_users_movies)
     # The final layer is the output which has a single output neuron
-    output = Dense(units=1)(denseLayers)
-    model = Model(inputs=[user_input, movie_input, metadata], outputs=output)
-    model.compile(optimizer='Adam', loss='MSE', metrics=['MAE'])
+    output = Dense(units=1)(dense_layer)
+    model = Model(inputs=[user, movie, metadata], outputs=output)
+    model.compile(optimizer=optimizers.Adam(),
+                  loss='MAE',
+                  metrics=['MAE'])
     return model
 
 # %% Adding features to the ratings
@@ -455,14 +451,16 @@ def get_with_metadata(cluster: pd.Series):
 
 # %%
 
-custom_model_scores = []
+custom_model_scores_mae = []
+custom_model_scores_rmse = []
 
 for k in range(2, 6):
     k_idx = k - 2
     current_cluster = pd.DataFrame(
         clusters_custom[k_idx], columns=genres_table['movieId'])  # type:ignore
     clusters = current_cluster.apply(get_with_metadata, axis=1).tolist()
-    custom_cluster_scores = []
+    custom_cluster_scores_mae = []
+    custom_cluster_scores_rmse = []
     print(f'Creating custom models for modified K-means with {k} clusters')
     for cluster_idx in range(k):
         print(f'Training cluster {cluster_idx+1}')
@@ -476,29 +474,28 @@ for k in range(2, 6):
         X['movieId'] = X['movieId'].map(movieId_encoder.original2encoded)
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.25, shuffle=True, random_state=42)  # type:ignore
-        model = createCustomModel(data=cluster, metadata_size=20,
-                                  userOutputDim=50, movieOutputDim=50)
+        model = create_custom_model(data=cluster)
+        plot_model(model, to_file=f'images/models/custom-{k}.png', show_shapes=True)
         history = model.fit(x=[X_train['userId'], X_train['movieId'], X_train.iloc[:, 2:]],  # type:ignore
                             y=y_train,  # type:ignore
                             epochs=n_epochs, verbose=1,
                             validation_data=([X_test['userId'], X_test['movieId'],  # type:ignore
                                               X_test.iloc[:, 2:]], y_test))  # type:ignore
-        # mae = model.evaluate(x=[X['userId'], X['movieId'], X.iloc[:, 2:]], y=y)[1]
-        mae = model.evaluate(x=[X_test['userId'], X_test['movieId'],  # type:ignore
-                                X_test.iloc[:, 2:]], y=y_test)[1]  # type:ignore
-        custom_cluster_scores.append(mae)
+        scores = model.evaluate(x=[X_test['userId'], X_test['movieId'],  # type:ignore
+                                   X_test.iloc[:, 2:]], y=y_test)  # type:ignore
+        custom_cluster_scores_mae.append(scores[1])
         plt.plot(history.history['MAE'])  # type:ignore
         plt.plot(history.history['val_MAE'])  # type:ignore
         plt.ylabel('Mean Absolute Error (MAE)')
         plt.xlabel('Epoch')
         plt.legend(['Training data', 'Testing data'])
-        plt.title(f'Modified K-Means, {k} clusters, # {cluster_idx}')
-        plt.savefig(f'images/custom/{k}-{cluster_idx}.png')
+        plt.title(f'Custom model, {k} clusters, # {cluster_idx}')
+        plt.savefig(f'images/custom/{k}-mae-{cluster_idx}.png')
         plt.show()
-    k_clusters_mae = np.mean(custom_cluster_scores)
-    custom_model_scores.append(k_clusters_mae)
+    k_clusters_mae = np.mean(custom_cluster_scores_mae)
+    custom_model_scores_mae.append(k_clusters_mae)
 
-for k, cluster in zip(range(2, 6), custom_model_scores):
+for k, cluster in zip(range(2, 6), custom_model_scores_mae):
     print(f'{k} clusters MAE: {cluster}')
 
 # %% Final plot
@@ -507,9 +504,9 @@ labels = [2, 3, 4, 5]
 x = np.arange(len(labels))
 
 fig, ax = plt.subplots()
-fig1 = ax.plot(standard_kmeans_cluster_scores, label='Standard')
-fig2 = ax.plot(custom_kmeans_cluster_scores, label='Modified')
-fig3 = ax.plot(custom_model_scores, label='Modified + custom NN')
+fig1 = ax.plot(standard_kmeans_cluster_scores_mae, label='Standard+AGNN')
+fig2 = ax.plot(custom_kmeans_cluster_scores_mae, label='Modified+AGNN')
+fig3 = ax.plot(custom_model_scores_mae, label='Custom Model')
 
 ax.set_title('Mean Absolute Error per clustering method')
 ax.set_ylabel('Mean Absolute Error (MAE)')
@@ -520,7 +517,5 @@ ax.legend()
 
 fig.tight_layout()
 
-plt.savefig('images/final_comparison.png')
+plt.savefig('images/final_comparison_mae.png')
 plt.show()
-
-# %%
